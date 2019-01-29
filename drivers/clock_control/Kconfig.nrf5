@@ -5,11 +5,26 @@
 # SPDX-License-Identifier: Apache-2.0
 
 menuconfig CLOCK_CONTROL_NRF5
-	bool "NRF5 Clock controller support"
-	depends on SOC_COMPATIBLE_NRF
+        bool "NRF5 Clock controller support"
+        depends on SOC_COMPATIBLE_NRF
+        select CLOCK_CONTROL_NRF5_IMPL
+        help
+          Enable support for the Nordic Semiconductor nRF5x series SoC clock
+          driver.
+
+choice CLOCK_CONTROL_NRF5_IMPL
+        bool
+        prompt "nRF5 Clock controller implementation"
+        default CLOCK_CONTROL_NRF5_DEFAULT
+
+config CLOCK_CONTROL_NRF5_DEFAULT
+        bool "Default NRF5 Clock controller support"
+        depends on BT_LL_SW
 	help
-	  Enable support for the Nordic Semiconductor nRF5x series SoC clock
-	  driver.
+          Enable default implementation of the Nordic Semiconductor nRF5x
+          series SoC clock driver.
+
+endchoice
 
 if CLOCK_CONTROL_NRF5
 
@@ -28,7 +43,7 @@ config CLOCK_CONTROL_NRF5_K32SRC_DRV_NAME
 	string "NRF5 32KHz clock device name"
 	default "clk_k32src"
 
-choice
+choice CLOCK_CONTROL_NR5_SOURCE
 	prompt "32KHz clock source"
 	default CLOCK_CONTROL_NRF5_K32SRC_XTAL
 
@@ -49,7 +64,7 @@ config CLOCK_CONTROL_NRF5_K32SRC_BLOCKING
 	  initially start running and automatically switch to crystal when
 	  ready.
 
-choice
+choice CLOCK_CONTROL_NR5_ACCURACY
 	prompt "32KHz clock accuracy"
 	default CLOCK_CONTROL_NRF5_K32SRC_500PPM if CLOCK_CONTROL_NRF5_K32SRC_RC
 	default CLOCK_CONTROL_NRF5_K32SRC_20PPM
@@ -81,3 +96,4 @@ config CLOCK_CONTROL_NRF5_K32SRC_20PPM
 endchoice
 
 endif # CLOCK_CONTROL_NRF5
+

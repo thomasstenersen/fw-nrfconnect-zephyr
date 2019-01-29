@@ -12,8 +12,8 @@ config  SOC_SERIES_NRF52X
 	select CPU_HAS_ARM_MPU
 	select SOC_FAMILY_NRF
 	select NRF_RTC_TIMER
-	select CLOCK_CONTROL
-	select CLOCK_CONTROL_NRF5
+        select CLOCK_CONTROL
+        select CLOCK_CONTROL_NRF5
 	select SYS_POWER_LOW_POWER_STATE_SUPPORTED
 	select SYS_POWER_STATE_CPU_LPS_SUPPORTED
 	select SYS_POWER_STATE_CPU_LPS_1_SUPPORTED
@@ -24,4 +24,4 @@ config  SOC_SERIES_NRF52X
 	select HAS_NRFX
 	select HAS_SEGGER_RTT
 	help
-	 Enable support for NRF52 MCU series
+         Enable support for NRF52 MCU series
