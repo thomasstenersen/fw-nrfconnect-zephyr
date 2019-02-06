@@ -1,20 +1,8 @@
-if (CONFIG_ENTROPY_ESP32_RNG OR
-    CONFIG_ENTROPY_MCUX_RNGA OR
-    CONFIG_ENTROPY_MCUX_TRNG OR
-    CONFIG_ENTROPY_NRF5_RNG_DEFAULT OR
-    CONFIG_ENTROPY_SAM_RNG OR
-    CONFIG_ENTROPY_STM32_RNG OR
-    CONFIG_FAKE_ENTROPY_NATIVE_POSIX OR
-    CONFIG_USERSPACE)
-zephyr_library()
-
-zephyr_library_sources_ifdef(CONFIG_ENTROPY_ESP32_RNG          entropy_esp32.c)
-zephyr_library_sources_ifdef(CONFIG_ENTROPY_MCUX_RNGA          entropy_mcux_rnga.c)
-zephyr_library_sources_ifdef(CONFIG_ENTROPY_MCUX_TRNG          entropy_mcux_trng.c)
-zephyr_library_sources_ifdef(CONFIG_ENTROPY_NRF5_RNG_DEFAULT   entropy_nrf5.c)
-zephyr_library_sources_ifdef(CONFIG_ENTROPY_SAM_RNG            entropy_sam.c)
-zephyr_library_sources_ifdef(CONFIG_ENTROPY_STM32_RNG          entropy_stm32.c)
-zephyr_library_sources_ifdef(CONFIG_FAKE_ENTROPY_NATIVE_POSIX  fake_entropy_native_posix.c)
-zephyr_library_sources_ifdef(CONFIG_USERSPACE                  entropy_handlers.c)
-
-endif()
+zephyr_sources_ifdef(CONFIG_ENTROPY_ESP32_RNG          entropy_esp32.c)
+zephyr_sources_ifdef(CONFIG_ENTROPY_MCUX_RNGA          entropy_mcux_rnga.c)
+zephyr_sources_ifdef(CONFIG_ENTROPY_MCUX_TRNG          entropy_mcux_trng.c)
+zephyr_sources_ifdef(CONFIG_ENTROPY_NRF5_RNG_DEFAULT   entropy_nrf5.c)
+zephyr_sources_ifdef(CONFIG_ENTROPY_SAM_RNG            entropy_sam.c)
+zephyr_sources_ifdef(CONFIG_ENTROPY_STM32_RNG          entropy_stm32.c)
+zephyr_sources_ifdef(CONFIG_FAKE_ENTROPY_NATIVE_POSIX  fake_entropy_native_posix.c)
+zephyr_sources_ifdef(CONFIG_USERSPACE                  entropy_handlers.c)
