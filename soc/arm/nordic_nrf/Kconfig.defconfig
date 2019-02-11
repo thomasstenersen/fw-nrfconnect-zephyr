@@ -28,9 +28,6 @@ endif # GPIO
 
 if FLASH
 
-config SOC_FLASH_NRF
-	default y
-
 endif # FLASH
 
 if ENTROPY_GENERATOR
