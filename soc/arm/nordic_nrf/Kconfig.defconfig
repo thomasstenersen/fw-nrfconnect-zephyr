@@ -26,8 +26,4 @@ config GPIO_NRFX
 
 endif # GPIO
 
-if FLASH
-
-endif # FLASH
-
 endif # SOC_FAMILY_NRF
