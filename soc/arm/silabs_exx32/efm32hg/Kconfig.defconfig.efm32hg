@@ -8,9 +8,6 @@
 
 if SOC_SERIES_EFM32HG
 
-config GPIO
-	default y
-
 if GPIO
 
 config GPIO_GECKO
@@ -24,6 +21,13 @@ config UART_GECKO
 	default y
 
 endif # SERIAL
+
+if I2C
+
+config I2C_GECKO
+	default y
+
+endif # I2C
 
 if FLASH
 

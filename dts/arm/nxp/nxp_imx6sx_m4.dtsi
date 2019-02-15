@@ -28,15 +28,13 @@
 	};
 
 	tcml:memory@1fff8000 {
-		device_type = "memory";
-		compatible = "nxp,imx-code-bus";
+		compatible = "nxp,imx-itcm";
 		reg = <0x1fff8000 0x00008000>;
 		label = "TCML";
 	};
 
 	tcmu:memory@20000000 {
-		device_type = "memory";
-		compatible = "nxp,imx-sys-bus";
+		compatible = "nxp,imx-dtcm";
 		reg = <0x20000000 0x00008000>;
 		label = "TCMU";
 	};
@@ -251,6 +249,32 @@
 			       RDC_DOMAIN_PERM(M4_DOMAIN_ID,\
 					       RDC_DOMAIN_PERM_RW))>;
 			label = "MU_B";
+			status = "disabled";
+		};
+
+		epit1:epit@420d0000 {
+			compatible = "nxp,imx-epit";
+			reg = <0x420d0000 0x4000>;
+			interrupts = <56 0>;
+			prescaler = <0>;
+			rdc = <(RDC_DOMAIN_PERM(A9_DOMAIN_ID,\
+					       RDC_DOMAIN_PERM_RW)|\
+			       RDC_DOMAIN_PERM(M4_DOMAIN_ID,\
+					       RDC_DOMAIN_PERM_RW))>;
+			label = "EPIT_1";
+			status = "disabled";
+		};
+
+		epit2:epit@420d4000 {
+			compatible = "nxp,imx-epit";
+			reg = <0x420d4000 0x4000>;
+			interrupts = <57 0>;
+			prescaler = <0>;
+			rdc = <(RDC_DOMAIN_PERM(A9_DOMAIN_ID,\
+					       RDC_DOMAIN_PERM_RW)|\
+			       RDC_DOMAIN_PERM(M4_DOMAIN_ID,\
+					       RDC_DOMAIN_PERM_RW))>;
+			label = "EPIT_2";
 			status = "disabled";
 		};
 	};

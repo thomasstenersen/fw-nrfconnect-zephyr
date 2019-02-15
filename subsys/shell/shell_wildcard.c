@@ -9,6 +9,7 @@
 #include "shell_wildcard.h"
 #include "shell_utils.h"
 
+
 static void subcmd_get(const struct shell_cmd_entry *cmd,
 		       size_t idx, const struct shell_static_entry **entry,
 		       struct shell_static_entry *d_entry)
@@ -132,7 +133,7 @@ static enum shell_wildcard_status commands_expand(const struct shell *shell,
 
 bool shell_wildcard_character_exist(const char *str)
 {
-	size_t str_len = shell_strlen(str);
+	u16_t str_len = shell_strlen(str);
 
 	for (size_t i = 0; i < str_len; i++) {
 		if ((str[i] == '?') || (str[i] == '*')) {

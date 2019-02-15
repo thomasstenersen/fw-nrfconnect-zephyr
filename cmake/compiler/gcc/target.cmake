@@ -49,9 +49,9 @@ endforeach()
 if("${ZEPHYR_TOOLCHAIN_VARIANT}" STREQUAL "xcc")
 
   list(APPEND TOOLCHAIN_LIBS
-	gcc
-	hal
-	)
+    gcc
+    hal
+    )
 
 else()
   include(${ZEPHYR_BASE}/cmake/gcc-m-cpu.cmake)
@@ -85,20 +85,23 @@ else()
       )
   endif()
 
-  execute_process(
-    COMMAND ${CMAKE_C_COMPILER} ${TOOLCHAIN_C_FLAGS} --print-libgcc-file-name
-    OUTPUT_VARIABLE LIBGCC_FILE_NAME
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
+  if(NOT no_libgcc)
+    # This libgcc code is partially duplicated in compiler/*/target.cmake
+    execute_process(
+      COMMAND ${CMAKE_C_COMPILER} ${TOOLCHAIN_C_FLAGS} --print-libgcc-file-name
+      OUTPUT_VARIABLE LIBGCC_FILE_NAME
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      )
 
-  assert_exists(LIBGCC_FILE_NAME)
+    assert_exists(LIBGCC_FILE_NAME)
 
-  get_filename_component(LIBGCC_DIR ${LIBGCC_FILE_NAME} DIRECTORY)
+    get_filename_component(LIBGCC_DIR ${LIBGCC_FILE_NAME} DIRECTORY)
 
-  assert_exists(LIBGCC_DIR)
+    assert_exists(LIBGCC_DIR)
 
-  LIST(APPEND LIB_INCLUDE_DIR "-L\"${LIBGCC_DIR}\"")
-  LIST(APPEND TOOLCHAIN_LIBS gcc)
+    LIST(APPEND LIB_INCLUDE_DIR "-L\"${LIBGCC_DIR}\"")
+    LIST(APPEND TOOLCHAIN_LIBS gcc)
+  endif()
 
   if(SYSROOT_DIR)
     # The toolchain has specified a sysroot dir that we can use to set
@@ -124,5 +127,17 @@ endif()
 foreach(isystem_include_dir ${NOSTDINC})
   list(APPEND isystem_include_flags -isystem "\"${isystem_include_dir}\"")
 endforeach()
-set(CMAKE_REQUIRED_FLAGS -nostartfiles -nostdlib ${isystem_include_flags} -Wl,--unresolved-symbols=ignore-in-object-files)
+# The CMAKE_REQUIRED_FLAGS variable is used by check_c_compiler_flag()
+# (and other commands which end up calling check_c_source_compiles())
+# to add additional compiler flags used during checking. These flags
+# are unused during "real" builds of Zephyr source files linked into
+# the final executable.
+#
+# Appending onto any existing values lets users specify
+# toolchain-specific flags at generation time.
+list(APPEND CMAKE_REQUIRED_FLAGS -nostartfiles -nostdlib ${isystem_include_flags} -Wl,--unresolved-symbols=ignore-in-object-files)
 string(REPLACE ";" " " CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS}")
+
+# Load toolchain_cc-family macros
+include(${ZEPHYR_BASE}/cmake/compiler/${COMPILER}/target_security_fortify.cmake)
+include(${ZEPHYR_BASE}/cmake/compiler/${COMPILER}/target_security_canaries.cmake)

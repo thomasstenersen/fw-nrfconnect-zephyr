@@ -24,7 +24,7 @@
 	#error too small SHELL_PRINTF_BUFF_SIZE
 #endif
 
-#define SHELL_MSG_COMMAND_NOT_FOUND	": command not found"
+#define SHELL_MSG_CMD_NOT_FOUND		": command not found"
 
 #define SHELL_INIT_OPTION_PRINTER	(NULL)
 
@@ -42,26 +42,6 @@ static void cmd_buffer_clear(const struct shell *shell)
 	shell->ctx->cmd_buff_len = 0;
 }
 
-static inline void prompt_print(const struct shell *shell)
-{
-	shell_fprintf(shell, SHELL_INFO, "%s", shell->prompt);
-}
-
-static inline void cmd_print(const struct shell *shell)
-{
-	shell_fprintf(shell, SHELL_NORMAL, "%s", shell->ctx->cmd_buff);
-}
-
-static void cmd_line_print(const struct shell *shell)
-{
-	prompt_print(shell);
-
-	if (flag_echo_get(shell)) {
-		cmd_print(shell);
-		shell_op_cursor_position_synchronize(shell);
-	}
-}
-
 /**
  * @brief Prints error message on wrong argument count.
  *	  Optionally, printing help on wrong argument count.
@@ -76,7 +56,8 @@ static int cmd_precheck(const struct shell *shell,
 			bool arg_cnt_ok)
 {
 	if (!arg_cnt_ok) {
-		shell_fprintf(shell, SHELL_ERROR, "%s: wrong parameter count\n",
+		shell_fprintf(shell, SHELL_ERROR,
+			      "%s: wrong parameter count\n",
 			      shell->ctx->active_cmd.syntax);
 
 		if (IS_ENABLED(CONFIG_SHELL_HELP_ON_WRONG_ARGUMENT_COUNT)) {
@@ -95,7 +76,7 @@ static void state_set(const struct shell *shell, enum shell_state state)
 
 	if (state == SHELL_STATE_ACTIVE) {
 		cmd_buffer_clear(shell);
-		prompt_print(shell);
+		shell_print_prompt_and_cmd(shell);
 	}
 }
 
@@ -167,7 +148,7 @@ static void history_put(const struct shell *shell, u8_t *line, size_t length)
 static void history_handle(const struct shell *shell, bool up)
 {
 	bool history_mode;
-	size_t len;
+	u16_t len;
 
 	/*optional feature */
 	if (!IS_ENABLED(CONFIG_SHELL_HISTORY)) {
@@ -209,7 +190,7 @@ static void history_handle(const struct shell *shell, bool up)
 
 	shell_op_cursor_home_move(shell);
 	clear_eos(shell);
-	cmd_print(shell);
+	shell_print_cmd(shell);
 	shell->ctx->cmd_buff_pos = len;
 	shell->ctx->cmd_buff_len = len;
 	shell_op_cond_next_line(shell);
@@ -380,8 +361,8 @@ static void autocomplete(const struct shell *shell,
 			 size_t subcmd_idx)
 {
 	const struct shell_static_entry *match;
-	size_t arg_len = shell_strlen(arg);
-	size_t cmd_len;
+	u16_t cmd_len;
+	u16_t arg_len = shell_strlen(arg);
 
 	/* shell->ctx->active_cmd can be safely used outside of command context
 	 * to save stack
@@ -445,7 +426,7 @@ static void tab_options_print(const struct shell *shell,
 	/* Printing all matching commands (options). */
 	tab_item_print(shell, SHELL_INIT_OPTION_PRINTER, longest);
 
-	while (cnt--) {
+	while (cnt) {
 		/* shell->ctx->active_cmd can be safely used outside of command
 		 * context to save stack
 		 */
@@ -459,15 +440,16 @@ static void tab_options_print(const struct shell *shell,
 		}
 
 		tab_item_print(shell, match->syntax, longest);
+		cnt--;
 	}
 
 	cursor_next_line_move(shell);
-	cmd_line_print(shell);
+	shell_print_prompt_and_cmd(shell);
 }
 
 static u16_t common_beginning_find(const struct shell_static_entry *cmd,
 				   const char **str,
-				   size_t first, size_t cnt, size_t arg_len)
+				   size_t first, size_t cnt, u16_t arg_len)
 {
 	struct shell_static_entry dynamic_entry;
 	const struct shell_static_entry *match;
@@ -509,11 +491,10 @@ static void partial_autocomplete(const struct shell *shell,
 				 const char *arg,
 				 size_t first, size_t cnt)
 {
-	size_t arg_len = shell_strlen(arg);
 	const char *completion;
-	u16_t common;
-
-	common = common_beginning_find(cmd, &completion, first, cnt, arg_len);
+	u16_t arg_len = shell_strlen(arg);
+	u16_t common = common_beginning_find(cmd, &completion,
+			first, cnt, arg_len);
 
 	if (common) {
 		shell_op_completion_insert(shell, &completion[arg_len],
@@ -522,14 +503,17 @@ static void partial_autocomplete(const struct shell *shell,
 }
 
 static int exec_cmd(const struct shell *shell, size_t argc, char **argv,
-		    struct shell_static_entry help_entry)
+		    const struct shell_static_entry *help_entry)
 {
 	int ret_val = 0;
 
 	if (shell->ctx->active_cmd.handler == NULL) {
-		if ((help_entry.help) && IS_ENABLED(CONFIG_SHELL_HELP)) {
-			if (help_entry.help != shell->ctx->active_cmd.help) {
-				shell->ctx->active_cmd = help_entry;
+		if ((help_entry != NULL) && IS_ENABLED(CONFIG_SHELL_HELP)) {
+			if (help_entry->help == NULL) {
+				return -ENOEXEC;
+			}
+			if (help_entry->help != shell->ctx->active_cmd.help) {
+				shell->ctx->active_cmd = *help_entry;
 			}
 			shell_help(shell);
 			return SHELL_CMD_HELP_PRINTED;
@@ -580,7 +564,7 @@ static int execute(const struct shell *shell)
 	size_t cmd_lvl = SHELL_CMD_ROOT_LVL;
 	size_t cmd_with_handler_lvl = 0;
 	bool wildcard_found = false;
-	size_t cmd_idx;
+	size_t cmd_idx = 0;
 	size_t argc;
 	char quote;
 
@@ -614,29 +598,13 @@ static int execute(const struct shell *shell)
 		return -ENOEXEC;
 	}
 
-	/*  Searching for a matching root command. */
-	p_cmd = shell_root_cmd_find(argv[0]);
-	if (p_cmd == NULL) {
-		shell_fprintf(shell, SHELL_ERROR, "%s%s\n", argv[0],
-			      SHELL_MSG_COMMAND_NOT_FOUND);
-		return -ENOEXEC;
-	}
-
-	/* checking if root command has a handler */
-	shell->ctx->active_cmd = *p_cmd->u.entry;
-	help_entry = *p_cmd->u.entry;
-
-	p_cmd = p_cmd->u.entry->subcmd;
-	cmd_lvl++;
-	cmd_idx = 0;
-
 	/* Below loop is analyzing subcommands of found root command. */
 	while (true) {
 		if (cmd_lvl >= argc) {
 			break;
 		}
 
-		if (IS_ENABLED(CONFIG_SHELL_HELP) &&
+		if (IS_ENABLED(CONFIG_SHELL_HELP) && (cmd_lvl > 0) &&
 		    (!strcmp(argv[cmd_lvl], "-h") ||
 		     !strcmp(argv[cmd_lvl], "--help"))) {
 			/* Command called with help option so it makes no sense
@@ -653,7 +621,7 @@ static int execute(const struct shell *shell)
 			return -ENOEXEC;
 		}
 
-		if (IS_ENABLED(CONFIG_SHELL_WILDCARD)) {
+		if (IS_ENABLED(CONFIG_SHELL_WILDCARD) && (cmd_lvl > 0)) {
 			enum shell_wildcard_status status;
 
 			status = shell_wildcard_process(shell, p_cmd,
@@ -679,31 +647,32 @@ static int execute(const struct shell *shell)
 			      &d_entry);
 
 		if ((cmd_idx == 0) || (p_static_entry == NULL)) {
+			if (cmd_lvl == 0) {
+				shell_error(shell, "%s%s", argv[0],
+					    SHELL_MSG_CMD_NOT_FOUND);
+				return -ENOEXEC;
+			}
 			break;
 		}
 
 		if (strcmp(argv[cmd_lvl], p_static_entry->syntax) == 0) {
 			/* checking if command has a handler */
 			if (p_static_entry->handler != NULL) {
-				if (IS_ENABLED(CONFIG_SHELL_WILDCARD)) {
-					if (wildcard_found) {
-						shell_op_cursor_end_move(shell);
-						shell_op_cond_next_line(shell);
+				if (IS_ENABLED(CONFIG_SHELL_WILDCARD) &&
+				    (wildcard_found)) {
+					shell_op_cursor_end_move(shell);
+					shell_op_cond_next_line(shell);
 
-						/* An error occurred, fnmatch
-						 * argument cannot be followed
-						 * by argument with a handler to
-						 * avoid multiple function
-						 * calls.
-						 */
-						shell_fprintf(shell,
-							      SHELL_ERROR,
-							"Error: requested"
-							" multiple function"
-							" executions\n");
+					/* An error occurred, fnmatch  argument
+					 * cannot be followed by argument with
+					 * a handler to avoid multiple function
+					 * calls.
+					 */
+					shell_fprintf(shell, SHELL_ERROR,
+						"Error: requested multiple"
+						" function executions\n");
 
-						return -ENOEXEC;
-					}
+					return -ENOEXEC;
 				}
 
 				shell->ctx->active_cmd = *p_static_entry;
@@ -720,7 +689,7 @@ static int execute(const struct shell *shell)
 		}
 	}
 
-	if (IS_ENABLED(CONFIG_SHELL_WILDCARD)) {
+	if (IS_ENABLED(CONFIG_SHELL_WILDCARD) && wildcard_found) {
 		shell_wildcard_finalize(shell);
 		/* cmd_buffer has been overwritten by function finalize function
 		 * with all expanded commands. Hence shell_make_argv needs to
@@ -733,7 +702,7 @@ static int execute(const struct shell *shell)
 
 	/* Executing the deepest found handler. */
 	return exec_cmd(shell, argc - cmd_with_handler_lvl,
-			&argv[cmd_with_handler_lvl], help_entry);
+			&argv[cmd_with_handler_lvl], &help_entry);
 }
 
 static void tab_handle(const struct shell *shell)
@@ -768,7 +737,20 @@ static void tab_handle(const struct shell *shell)
 	}
 }
 
-static void metakeys_handle(const struct shell *shell, char data)
+static void alt_metakeys_handle(const struct shell *shell, char data)
+{
+	/* Optional feature */
+	if (!IS_ENABLED(CONFIG_SHELL_METAKEYS)) {
+		return;
+	}
+	if (data == SHELL_VT100_ASCII_ALT_B) {
+		shell_op_cursor_word_move(shell, -1);
+	} else if (data == SHELL_VT100_ASCII_ALT_F) {
+		shell_op_cursor_word_move(shell, 1);
+	}
+}
+
+static void ctrl_metakeys_handle(const struct shell *shell, char data)
 {
 	/* Optional feature */
 	if (!IS_ENABLED(CONFIG_SHELL_METAKEYS)) {
@@ -780,6 +762,10 @@ static void metakeys_handle(const struct shell *shell, char data)
 		shell_op_cursor_home_move(shell);
 		break;
 
+	case SHELL_VT100_ASCII_CTRL_B: /* CTRL + B */
+		shell_op_left_arrow(shell);
+		break;
+
 	case SHELL_VT100_ASCII_CTRL_C: /* CTRL + C */
 		shell_op_cursor_end_move(shell);
 		if (!shell_cursor_in_empty_line(shell)) {
@@ -789,14 +775,26 @@ static void metakeys_handle(const struct shell *shell, char data)
 		state_set(shell, SHELL_STATE_ACTIVE);
 		break;
 
+	case SHELL_VT100_ASCII_CTRL_D: /* CTRL + D */
+		shell_op_char_delete(shell);
+		break;
+
 	case SHELL_VT100_ASCII_CTRL_E: /* CTRL + E */
 		shell_op_cursor_end_move(shell);
+		break;
+
+	case SHELL_VT100_ASCII_CTRL_F: /* CTRL + F */
+		shell_op_right_arrow(shell);
+		break;
+
+	case SHELL_VT100_ASCII_CTRL_K: /* CTRL + K */
+		shell_op_delete_from_cursor(shell);
 		break;
 
 	case SHELL_VT100_ASCII_CTRL_L: /* CTRL + L */
 		SHELL_VT100_CMD(shell, SHELL_VT100_CURSORHOME);
 		SHELL_VT100_CMD(shell, SHELL_VT100_CLEARSCREEN);
-		cmd_line_print(shell);
+		shell_print_prompt_and_cmd(shell);
 		break;
 
 	case SHELL_VT100_ASCII_CTRL_U: /* CTRL + U */
@@ -915,8 +913,8 @@ static void state_collect(const struct shell *shell)
 				if (isprint((int) data)) {
 					flag_history_exit_set(shell, true);
 					shell_op_char_insert(shell, data);
-				} else {
-					metakeys_handle(shell, data);
+				} else if (flag_echo_get(shell)) {
+					ctrl_metakeys_handle(shell, data);
 				}
 				break;
 			}
@@ -926,10 +924,11 @@ static void state_collect(const struct shell *shell)
 			if (data == '[') {
 				receive_state_change(shell,
 						SHELL_RECEIVE_ESC_SEQ);
-			} else {
-				receive_state_change(shell,
-						SHELL_RECEIVE_DEFAULT);
+				break;
+			} else if (flag_echo_get(shell)) {
+				alt_metakeys_handle(shell, data);
 			}
+			receive_state_change(shell, SHELL_RECEIVE_DEFAULT);
 			break;
 
 		case SHELL_RECEIVE_ESC_SEQ:
@@ -1007,6 +1006,8 @@ static void state_collect(const struct shell *shell)
 			break;
 		}
 	}
+
+	transport_buffer_flush(shell);
 }
 
 static void transport_evt_handler(enum shell_transport_evt evt_type, void *ctx)
@@ -1022,24 +1023,30 @@ static void transport_evt_handler(enum shell_transport_evt evt_type, void *ctx)
 
 static void shell_log_process(const struct shell *shell)
 {
-	bool processed;
-	int signaled;
+	bool processed = false;
+	int signaled = 0;
 	int result;
 
 	do {
-		shell_cmd_line_erase(shell);
-		processed = shell_log_backend_process(shell->log_backend);
-		cmd_line_print(shell);
+		if (!IS_ENABLED(CONFIG_LOG_IMMEDIATE)) {
+			shell_cmd_line_erase(shell);
 
-		/* Arbitrary delay added to ensure that prompt is readable and
-		 * can be used to enter further commands.
+			processed = shell_log_backend_process(shell->log_backend);
+		}
+
+		struct k_poll_signal *signal =
+			&shell->ctx->signals[SHELL_SIGNAL_RXRDY];
+
+		shell_print_prompt_and_cmd(shell);
+
+		/* Arbitrary delay added to ensure that prompt is
+		 * readable and can be used to enter further commands.
 		 */
 		if (shell->ctx->cmd_buff_len) {
 			k_sleep(K_MSEC(15));
 		}
 
-		k_poll_signal_check(&shell->ctx->signals[SHELL_SIGNAL_RXRDY],
-						    &signaled, &result);
+		k_poll_signal_check(signal, &signaled, &result);
 
 	} while (processed && !signaled);
 }
@@ -1047,22 +1054,22 @@ static void shell_log_process(const struct shell *shell)
 static int instance_init(const struct shell *shell, const void *p_config,
 			 bool use_colors)
 {
-	__ASSERT_NO_MSG(shell);
-	__ASSERT_NO_MSG(shell->ctx && shell->iface && shell->prompt);
 	__ASSERT_NO_MSG((shell->shell_flag == SHELL_FLAG_CRLF_DEFAULT) ||
 			(shell->shell_flag == SHELL_FLAG_OLF_CRLF));
 
 	int err = shell->iface->api->init(shell->iface, p_config,
 					  transport_evt_handler,
 					  (void *) shell);
-
 	if (err != 0) {
 		return err;
 	}
 
+	memset(shell->ctx, 0, sizeof(*shell->ctx));
+	shell->ctx->prompt = shell->default_prompt;
+
 	history_init(shell);
 
-	memset(shell->ctx, 0, sizeof(*shell->ctx));
+	k_mutex_init(&shell->ctx->wr_mtx);
 
 	if (IS_ENABLED(CONFIG_SHELL_STATS)) {
 		shell->stats->log_lost_cnt = 0;
@@ -1075,7 +1082,7 @@ static int instance_init(const struct shell *shell, const void *p_config,
 	shell->ctx->state = SHELL_STATE_INITIALIZED;
 	shell->ctx->vt100_ctx.cons.terminal_wid = SHELL_DEFAULT_TERMINAL_WIDTH;
 	shell->ctx->vt100_ctx.cons.terminal_hei = SHELL_DEFAULT_TERMINAL_HEIGHT;
-	shell->ctx->vt100_ctx.cons.name_len = shell_strlen(shell->prompt);
+	shell->ctx->vt100_ctx.cons.name_len = shell_strlen(shell->ctx->prompt);
 	flag_use_colors_set(shell, IS_ENABLED(CONFIG_SHELL_VT100_COLORS));
 
 	return 0;
@@ -1084,7 +1091,7 @@ static int instance_init(const struct shell *shell, const void *p_config,
 static int instance_uninit(const struct shell *shell)
 {
 	__ASSERT_NO_MSG(shell);
-	__ASSERT_NO_MSG(shell->ctx && shell->iface && shell->prompt);
+	__ASSERT_NO_MSG(shell->ctx && shell->iface);
 
 	int err;
 
@@ -1109,6 +1116,30 @@ static int instance_uninit(const struct shell *shell)
 	return 0;
 }
 
+typedef void (*shell_signal_handler_t)(const struct shell *shell);
+
+static void shell_signal_handle(const struct shell *shell,
+				enum shell_signal sig_idx,
+				shell_signal_handler_t handler)
+{
+	struct k_poll_signal *signal = &shell->ctx->signals[sig_idx];
+	int set;
+	int res;
+
+	k_poll_signal_check(signal, &set, &res);
+
+	if (set) {
+		k_poll_signal_reset(signal);
+		handler(shell);
+	}
+}
+
+static void kill_handler(const struct shell *shell)
+{
+	(void)instance_uninit(shell);
+	k_thread_abort(k_current_get());
+}
+
 void shell_thread(void *shell_handle, void *arg_log_backend,
 		  void *arg_log_level)
 {
@@ -1125,7 +1156,7 @@ void shell_thread(void *shell_handle, void *arg_log_backend,
 				  &shell->ctx->signals[i]);
 	}
 
-	err = shell_start(shell);
+	err = shell->iface->api->enable(shell->iface, false);
 	if (err != 0) {
 		return;
 	}
@@ -1135,42 +1166,36 @@ void shell_thread(void *shell_handle, void *arg_log_backend,
 					 log_level);
 	}
 
-	while (true) {
-		int signaled;
-		int result;
+	/* Enable shell and print prompt. */
+	err = shell_start(shell);
+	if (err != 0) {
+		return;
+	}
 
-		err = k_poll(shell->ctx->events, SHELL_SIGNALS, K_FOREVER);
+	while (true) {
+		/* waiting for all signals except SHELL_SIGNAL_TXDONE */
+		err = k_poll(shell->ctx->events, SHELL_SIGNAL_TXDONE,
+			     K_FOREVER);
+
+		k_mutex_lock(&shell->ctx->wr_mtx, K_FOREVER);
+
 		if (err != 0) {
+			shell_error(shell, "Shell thread error: %d", err);
 			return;
 		}
 
-		k_poll_signal_check(&shell->ctx->signals[SHELL_SIGNAL_KILL],
-				    &signaled, &result);
-
-		if (signaled) {
-			k_poll_signal_reset(
-				&shell->ctx->signals[SHELL_SIGNAL_KILL]);
-			(void)instance_uninit(shell);
-
-			k_thread_abort(k_current_get());
+		if (shell->iface->api->update) {
+			shell->iface->api->update(shell->iface);
 		}
 
-		k_poll_signal_check(&shell->ctx->signals[SHELL_SIGNAL_LOG_MSG],
-				    &signaled, &result);
-
-		if (!signaled) {
-			/* Other signals handled together.*/
-			k_poll_signal_reset(
-				&shell->ctx->signals[SHELL_SIGNAL_RXRDY]);
-			k_poll_signal_reset(
-				&shell->ctx->signals[SHELL_SIGNAL_TXDONE]);
-			shell_process(shell);
-		} else if (IS_ENABLED(CONFIG_LOG)) {
-			k_poll_signal_reset(
-				&shell->ctx->signals[SHELL_SIGNAL_LOG_MSG]);
-			/* process log msg */
-			shell_log_process(shell);
+		shell_signal_handle(shell, SHELL_SIGNAL_KILL, kill_handler);
+		shell_signal_handle(shell, SHELL_SIGNAL_RXRDY, shell_process);
+		if (IS_ENABLED(CONFIG_LOG)) {
+			shell_signal_handle(shell, SHELL_SIGNAL_LOG_MSG,
+					    shell_log_process);
 		}
+
+		k_mutex_unlock(&shell->ctx->wr_mtx);
 	}
 }
 
@@ -1178,7 +1203,7 @@ int shell_init(const struct shell *shell, const void *transport_config,
 	       bool use_colors, bool log_backend, u32_t init_log_level)
 {
 	__ASSERT_NO_MSG(shell);
-	__ASSERT_NO_MSG(shell->ctx && shell->iface && shell->prompt);
+	__ASSERT_NO_MSG(shell->ctx && shell->iface && shell->default_prompt);
 
 	int err = instance_init(shell, transport_config, use_colors);
 
@@ -1192,6 +1217,7 @@ int shell_init(const struct shell *shell, const void *transport_config,
 			      (void *)init_log_level,
 			      K_LOWEST_APPLICATION_THREAD_PRIO, 0, K_NO_WAIT);
 
+	shell->ctx->tid = tid;
 	k_thread_name_set(tid, shell->thread_name);
 
 	return 0;
@@ -1202,8 +1228,11 @@ int shell_uninit(const struct shell *shell)
 	__ASSERT_NO_MSG(shell);
 
 	if (IS_ENABLED(CONFIG_MULTITHREADING)) {
+		struct k_poll_signal *signal =
+				&shell->ctx->signals[SHELL_SIGNAL_KILL];
+
 		/* signal kill message */
-		(void)k_poll_signal_raise(&shell->ctx->signals[SHELL_SIGNAL_KILL], 0);
+		(void)k_poll_signal_raise(signal, 0);
 
 		return 0;
 	} else {
@@ -1214,17 +1243,10 @@ int shell_uninit(const struct shell *shell)
 int shell_start(const struct shell *shell)
 {
 	__ASSERT_NO_MSG(shell);
-	__ASSERT_NO_MSG(shell->ctx && shell->iface && shell->prompt);
-
-	int err;
+	__ASSERT_NO_MSG(shell->ctx && shell->iface && shell->default_prompt);
 
 	if (shell->ctx->state != SHELL_STATE_INITIALIZED) {
 		return -ENOTSUP;
-	}
-
-	err = shell->iface->api->enable(shell->iface, false);
-	if (err != 0) {
-		return err;
 	}
 
 	if (IS_ENABLED(CONFIG_SHELL_VT100_COLORS)) {
@@ -1275,12 +1297,9 @@ void shell_process(const struct shell *shell)
 	case SHELL_STATE_ACTIVE:
 		state_collect(shell);
 		break;
-
 	default:
 		break;
 	}
-
-	transport_buffer_flush(shell);
 
 	internal.value = 0xFFFFFFFF;
 	internal.flags.processing = 0;
@@ -1288,17 +1307,25 @@ void shell_process(const struct shell *shell)
 			 internal.value);
 }
 
+
+
 void shell_fprintf(const struct shell *shell, enum shell_vt100_color color,
-		   const char *p_fmt, ...)
+		   const char *fmt, ...)
 {
 	__ASSERT_NO_MSG(shell);
+	__ASSERT(!k_is_in_isr(), "Thread context required.");
 	__ASSERT_NO_MSG(shell->ctx);
 	__ASSERT_NO_MSG(shell->fprintf_ctx);
-	__ASSERT_NO_MSG(p_fmt);
+	__ASSERT_NO_MSG(fmt);
 
 	va_list args = { 0 };
 
-	va_start(args, p_fmt);
+	if (k_current_get() != shell->ctx->tid) {
+		k_mutex_lock(&shell->ctx->wr_mtx, K_FOREVER);
+		shell_cmd_line_erase(shell);
+	}
+
+	va_start(args, fmt);
 
 	if (IS_ENABLED(CONFIG_SHELL_VT100_COLORS) &&
 	    shell->ctx->internal.flags.use_colors &&
@@ -1308,28 +1335,33 @@ void shell_fprintf(const struct shell *shell, enum shell_vt100_color color,
 		shell_vt100_colors_store(shell, &col);
 		shell_vt100_color_set(shell, color);
 
-		shell_fprintf_fmt(shell->fprintf_ctx, p_fmt, args);
+		shell_fprintf_fmt(shell->fprintf_ctx, fmt, args);
 
 		shell_vt100_colors_restore(shell, &col);
 	} else {
-		shell_fprintf_fmt(shell->fprintf_ctx, p_fmt, args);
+		shell_fprintf_fmt(shell->fprintf_ctx, fmt, args);
 	}
 
 	va_end(args);
+
+	if (k_current_get() != shell->ctx->tid) {
+		shell_print_prompt_and_cmd(shell);
+		transport_buffer_flush(shell);
+		k_mutex_unlock(&shell->ctx->wr_mtx);
+	}
 }
 
-int shell_prompt_change(const struct shell *shell, char *prompt)
+int shell_prompt_change(const struct shell *shell, const char *prompt)
 {
 	__ASSERT_NO_MSG(shell);
-	__ASSERT_NO_MSG(prompt);
 
-	size_t len = shell_strlen(prompt);
-
-	if (len <= CONFIG_SHELL_PROMPT_LENGTH) {
-		memcpy(shell->prompt, prompt, len + 1); /* +1 for '\0' */
-		return 0;
+	if (prompt == NULL) {
+		return -EINVAL;
 	}
-	return -ENOMEM;
+	shell->ctx->prompt = prompt;
+	shell->ctx->vt100_ctx.cons.name_len = shell_strlen(prompt);
+
+	return 0;
 }
 
 void shell_help(const struct shell *shell)
@@ -1353,7 +1385,7 @@ int shell_execute_cmd(const struct shell *shell, const char *cmd)
 	}
 
 	if (cmd_len > (CONFIG_SHELL_CMD_BUFF_SIZE - 1)) {
-		return -ENOEXEC;
+		return -ENOMEM;
 	}
 
 	if (shell == NULL) {

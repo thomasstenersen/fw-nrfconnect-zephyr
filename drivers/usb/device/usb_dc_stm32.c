@@ -55,7 +55,7 @@
 #include <logging/log.h>
 LOG_MODULE_REGISTER(usb_dc_stm32);
 
-#if defined(DT_USB_BASE_ADDRESS) && defined(CONFIG_USB_HS_BASE_ADDRES)
+#if defined(DT_USB_BASE_ADDRESS) && defined(DT_USB_HS_BASE_ADDRESS)
 #error "Only one interface should be enabled at a time, OTG FS or OTG HS"
 #endif
 
@@ -223,7 +223,7 @@ static int usb_dc_stm32_clock_enable(void)
 
 	/*
 	 * Some SoCs in STM32F0/L0/L4 series disable USB clock by
-	 * default.  We force USB clock source to PLL clock for this
+	 * default.  We force USB clock source to MSI or PLL clock for this
 	 * SoCs.  However, if these parts have an HSI48 clock, use
 	 * that instead.  Example reference manual RM0360 for
 	 * STM32F030x4/x6/x8/xC and STM32F070x6/xB.
@@ -253,11 +253,28 @@ static int usb_dc_stm32_clock_enable(void)
 
 	LL_RCC_SetUSBClockSource(LL_RCC_USB_CLKSOURCE_HSI48);
 #elif defined(LL_RCC_USB_CLKSOURCE_NONE)
+	/* When MSI is configured in PLL mode with a 32.768 kHz clock source,
+	 * the MSI frequency can be automatically trimmed by hardware to reach
+	 * better than ±0.25% accuracy. In this mode the MSI can feed the USB
+	 * device. For now, we only use MSI for USB if not already used as
+	 * system clock source.
+	 */
+#if defined(CONFIG_CLOCK_STM32_MSI_PLL_MODE) && !defined(CONFIG_CLOCK_STM32_SYSCLK_SRC_MSI)
+	LL_RCC_MSI_Enable();
+	while (!LL_RCC_MSI_IsReady()) {
+		/* Wait for MSI to become ready */
+	}
+	/* Force 48 MHz mode */
+	LL_RCC_MSI_EnableRangeSelection();
+	LL_RCC_MSI_SetRange(LL_RCC_MSIRANGE_11);
+	LL_RCC_SetUSBClockSource(LL_RCC_USB_CLKSOURCE_MSI);
+#else
 	if (LL_RCC_PLL_IsReady()) {
 		LL_RCC_SetUSBClockSource(LL_RCC_USB_CLKSOURCE_PLL);
 	} else {
 		LOG_ERR("Unable to set USB clock source to PLL.");
 	}
+#endif /* CONFIG_CLOCK_STM32_MSI_PLL_MODE && !CONFIG_CLOCK_STM32_SYSCLK_SRC_MSI */
 #endif /* RCC_HSI48_SUPPORT / LL_RCC_USB_CLKSOURCE_NONE */
 
 	if (clock_control_on(clk, (clock_control_subsys_t *)&pclken) != 0) {
@@ -312,7 +329,7 @@ static u32_t usb_dc_stm32_get_maximum_speed(void)
 			"USB controller will default to its maximum HW "
 			"capability");
 	}
-#endif /* CONFIG_USB_MAX_SPEED */
+#endif /* DT_USB_MAXIMUM_SPEED */
 
 	return speed;
 }
@@ -540,7 +557,7 @@ int usb_dc_ep_check_cap(const struct usb_dc_ep_cfg_data * const cfg)
 		return -1;
 	}
 
-	if (ep_idx > DT_USB_NUM_BIDIR_ENDPOINTS) {
+	if (ep_idx > (DT_USB_NUM_BIDIR_ENDPOINTS - 1)) {
 		LOG_ERR("endpoint index/address out of range");
 		return -1;
 	}
@@ -956,18 +973,18 @@ void HAL_PCDEx_SetConnectionState(PCD_HandleTypeDef *hpcd, uint8_t state)
 	struct device *usb_disconnect;
 
 	usb_disconnect = device_get_binding(
-				DT_USB_DC_STM32_DISCONN_GPIO_PORT_NAME);
+				DT_ST_STM32_USB_0_DISCONNECT_GPIOS_CONTROLLER);
 	gpio_pin_configure(usb_disconnect,
-			   DT_USB_DC_STM32_DISCONN_PIN, GPIO_DIR_OUT);
+			   DT_ST_STM32_USB_0_DISCONNECT_GPIOS_PIN, GPIO_DIR_OUT);
 
 	if (state) {
 		gpio_pin_write(usb_disconnect,
-			       DT_USB_DC_STM32_DISCONN_PIN,
-			       DT_USB_DC_STM32_DISCONN_PIN_LEVEL);
+			       DT_ST_STM32_USB_0_DISCONNECT_GPIOS_PIN,
+			       DT_ST_STM32_USB_0_DISCONNECT_GPIOS_FLAGS);
 	} else {
 		gpio_pin_write(usb_disconnect,
-			       DT_USB_DC_STM32_DISCONN_PIN,
-			       !DT_USB_DC_STM32_DISCONN_PIN_LEVEL);
+			       DT_ST_STM32_USB_0_DISCONNECT_GPIOS_PIN,
+			       !DT_ST_STM32_USB_0_DISCONNECT_GPIOS_FLAGS);
 	}
 }
 #endif /* USB && CONFIG_USB_DC_STM32_DISCONN_ENABLE */

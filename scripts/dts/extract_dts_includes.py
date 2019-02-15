@@ -9,7 +9,6 @@
 # vim: ai:ts=4:sw=4
 
 import sys
-from os import listdir
 import os, fnmatch
 import re
 import yaml
@@ -43,49 +42,51 @@ class Bindings(yaml.Loader):
     _included = []
 
     @classmethod
-    def bindings(cls, compatibles, yaml_dirs):
-        # find unique set of compatibles across all active nodes
-        s = set()
-        for k, v in compatibles.items():
-            if isinstance(v, list):
-                for item in v:
-                    s.add(item)
-            else:
-                s.add(v)
-
-        # scan YAML files and find the ones we are interested in
+    def bindings(cls, compats, yaml_dirs):
+        # Find all .yaml files in yaml_dirs
         cls._files = []
         for yaml_dir in yaml_dirs:
             for root, dirnames, filenames in os.walk(yaml_dir):
                 for filename in fnmatch.filter(filenames, '*.yaml'):
                     cls._files.append(os.path.join(root, filename))
 
-        yaml_list = {}
-        yaml_list['node'] = {}
-        yaml_list['bus'] = {}
-        yaml_list['compat'] = []
-        file_load_list = set()
+        yaml_list = {'node': {}, 'bus': {}, 'compat': []}
+        loaded_yamls = set()
+
         for file in cls._files:
+            # Extract compat from 'constraint:' line
             for line in open(file, 'r', encoding='utf-8'):
-                if re.search('^\s+constraint:*', line):
-                    c = line.split(':')[1].strip()
-                    c = c.strip('"')
-                    if c in s:
-                        if file not in file_load_list:
-                            file_load_list.add(file)
-                            with open(file, 'r', encoding='utf-8') as yf:
-                                cls._included = []
-                                l = yaml_traverse_inherited(yaml.load(yf, cls))
-                                if c not in yaml_list['compat']:
-                                    yaml_list['compat'].append(c)
-                                if 'parent' in l:
-                                    bus = l['parent']['bus']
-                                    if not bus in yaml_list['bus']:
-                                        yaml_list['bus'][bus] = {}
-                                    yaml_list['bus'][bus][c] = l
-                                else:
-                                    yaml_list['node'][c] = l
-        return (yaml_list['node'], yaml_list['bus'], yaml_list['compat'])
+                match = re.match(r'\s+constraint:\s*"([^"]*)"', line)
+                if match:
+                    break
+            else:
+                # No 'constraint:' line found. Move on to next yaml file.
+                continue
+
+            compat = match.group(1)
+            if compat not in compats or file in loaded_yamls:
+                # The compat does not appear in the device tree, or the yaml
+                # file has already been loaded
+                continue
+
+            loaded_yamls.add(file)
+
+            with open(file, 'r', encoding='utf-8') as yf:
+                cls._included = []
+                l = yaml_traverse_inherited(file, yaml.load(yf, cls))
+
+                if compat not in yaml_list['compat']:
+                    yaml_list['compat'].append(compat)
+
+                if 'parent' in l:
+                    bus = l['parent']['bus']
+                    if not bus in yaml_list['bus']:
+                        yaml_list['bus'][bus] = {}
+                    yaml_list['bus'][bus][compat] = l
+                else:
+                    yaml_list['node'][compat] = l
+
+        return yaml_list['node'], yaml_list['bus'], yaml_list['compat']
 
     def __init__(self, stream):
         filepath = os.path.realpath(stream.name)
@@ -138,209 +139,39 @@ class Bindings(yaml.Loader):
         with open(filepaths[0], 'r', encoding='utf-8') as f:
             return yaml.load(f, Bindings)
 
-def extract_controller(node_address, prop, prop_values, index, def_label, generic):
-
-    prop_def = {}
+def extract_bus_name(node_address, def_label):
+    label = def_label + '_BUS_NAME'
     prop_alias = {}
 
-    # get controller node (referenced via phandle)
-    cell_parent = phandles[prop_values[0]]
+    add_compat_alias(node_address, 'BUS_NAME', label, prop_alias)
 
-    for k in reduced[cell_parent]['props'].keys():
-        if k[0] == '#' and '-cells' in k:
-            num_cells = reduced[cell_parent]['props'].get(k)
+    # Generate defines for node aliases
+    if node_address in aliases:
+        add_prop_aliases(
+            node_address,
+            lambda alias: str_to_label(alias) + '_BUS_NAME',
+            label,
+            prop_alias)
 
-    # get controller node (referenced via phandle)
-    cell_parent = phandles[prop_values[0]]
-
-    try:
-       l_cell = reduced[cell_parent]['props'].get('label')
-    except KeyError:
-        l_cell = None
-
-    if l_cell is not None:
-
-        l_base = def_label.split('/')
-
-        # Check is defined should be indexed (_0, _1)
-        if index == 0 and len(prop_values) < (num_cells + 2):
-            # 0 or 1 element in prop_values
-            # ( ie len < num_cells + phandle + 1 )
-            l_idx = []
-        else:
-            l_idx = [str(index)]
-
-        # Check node generation requirements
-        try:
-            generation = get_binding(node_address)['properties'
-                    ][prop]['generation']
-        except:
-            generation = ''
-
-        if 'use-prop-name' in generation:
-            l_cellname = convert_string_to_label(prop + '_' + 'controller')
-        else:
-            l_cellname = convert_string_to_label(generic + '_' + 'controller')
-
-        label = l_base + [l_cellname] + l_idx
-
-        prop_def['_'.join(label)] = "\"" + l_cell + "\""
-
-        #generate defs also if node is referenced as an alias in dts
-        if node_address in aliases:
-            add_prop_aliases(
-                node_address,
-                lambda alias:
-                    '_'.join([convert_string_to_label(alias)] + label[1:]),
-                '_'.join(label),
+    insert_defs(node_address,
+                {label: '"' + find_parent_prop(node_address, 'label') + '"'},
                 prop_alias)
 
-        insert_defs(node_address, prop_def, prop_alias)
-
-    # prop off phandle + num_cells to get to next list item
-    prop_values = prop_values[num_cells+1:]
-
-    # recurse if we have anything left
-    if len(prop_values):
-        extract_controller(node_address, prop, prop_values, index + 1,
-                           def_label, generic)
-
-
-def extract_cells(node_address, prop, prop_values, names, index,
-                  def_label, generic):
-
-    cell_parent = phandles[prop_values.pop(0)]
-
-    try:
-        cell_yaml = get_binding(cell_parent)
-    except:
-        raise Exception(
-            "Could not find yaml description for " +
-                reduced[cell_parent]['name'])
-
-    try:
-        name = names.pop(0).upper()
-    except:
-        name = ''
-
-    # Get number of cells per element of current property
-    for k in reduced[cell_parent]['props'].keys():
-        if k[0] == '#' and '-cells' in k:
-            num_cells = reduced[cell_parent]['props'].get(k)
-            if k in cell_yaml.keys():
-                cell_yaml_names = k
-            else:
-                cell_yaml_names = '#cells'
-    try:
-        generation = get_binding(node_address)['properties'][prop
-                ]['generation']
-    except:
-        generation = ''
-
-    if 'use-prop-name' in generation:
-        l_cell = [convert_string_to_label(str(prop))]
-    else:
-        l_cell = [convert_string_to_label(str(generic))]
-
-    l_base = def_label.split('/')
-    # Check if #define should be indexed (_0, _1, ...)
-    if index == 0 and len(prop_values) < (num_cells + 2):
-        # Less than 2 elements in prop_values (ie len < num_cells + phandle + 1)
-        # Indexing is not needed
-        l_idx = []
-    else:
-        l_idx = [str(index)]
-
-    prop_def = {}
-    prop_alias = {}
-
-    # Generate label for each field of the property element
-    for i in range(num_cells):
-        l_cellname = [str(cell_yaml[cell_yaml_names][i]).upper()]
-        if l_cell == l_cellname:
-            label = l_base + l_cell + l_idx
-        else:
-            label = l_base + l_cell + l_cellname + l_idx
-        label_name = l_base + [name] + l_cellname
-        prop_def['_'.join(label)] = prop_values.pop(0)
-        if len(name):
-            prop_alias['_'.join(label_name)] = '_'.join(label)
-
-        # generate defs for node aliases
-        if node_address in aliases:
-            add_prop_aliases(
-                node_address,
-                lambda alias:
-                    '_'.join([convert_string_to_label(alias)] + label[1:]),
-                '_'.join(label),
-                prop_alias)
-
-        insert_defs(node_address, prop_def, prop_alias)
-
-    # recurse if we have anything left
-    if len(prop_values):
-        extract_cells(node_address, prop, prop_values, names,
-                      index + 1, def_label, generic)
-
-
-def extract_single(node_address, prop, key, def_label):
-
-    prop_def = {}
-    prop_alias = {}
-
-    if isinstance(prop, list):
-        for i, p in enumerate(prop):
-            k = convert_string_to_label(key)
-            label = def_label + '_' + k
-            if isinstance(p, str):
-                p = "\"" + p + "\""
-            prop_def[label + '_' + str(i)] = p
-    else:
-        k = convert_string_to_label(key)
-        label = def_label + '_' + k
-
-        if prop == 'parent-label':
-            prop = find_parent_prop(node_address, 'label')
-
-        if isinstance(prop, str):
-            prop = "\"" + prop + "\""
-        prop_def[label] = prop
-
-        # generate defs for node aliases
-        if node_address in aliases:
-            add_prop_aliases(
-                node_address,
-                lambda alias:
-                    convert_string_to_label(alias) + '_' + k,
-                label,
-                prop_alias)
-
-    insert_defs(node_address, prop_def, prop_alias)
 
 def extract_string_prop(node_address, key, label):
+    if node_address not in defs:
+        # Make all defs have the special 'aliases' key, to remove existence
+        # checks elsewhere
+        defs[node_address] = {'aliases': {}}
 
-    prop_def = {}
-
-    node = reduced[node_address]
-    prop = node['props'][key]
-
-    k = convert_string_to_label(key)
-    prop_def[label] = "\"" + prop + "\""
-
-    if node_address in defs:
-        defs[node_address].update(prop_def)
-    else:
-        defs[node_address] = prop_def
+    defs[node_address][label] = '"' + reduced[node_address]['props'][key] + '"'
 
 
 def extract_property(node_compat, node_address, prop, prop_val, names):
 
     node = reduced[node_address]
     yaml_node_compat = get_binding(node_address)
-    if 'base_label' in yaml_node_compat:
-        def_label = yaml_node_compat.get('base_label')
-    else:
-        def_label = get_node_label(node_address)
+    def_label = get_node_label(node_address)
 
     if 'parent' in yaml_node_compat:
         if 'bus' in yaml_node_compat['parent']:
@@ -376,16 +207,13 @@ def extract_property(node_compat, node_address, prop, prop_val, names):
                         # Need to generate alias name for this node:
                         aliases[node_address].append(node_alias)
 
-            # Use parent label to generate label
-            parent_label = get_node_label(parent_address)
-            def_label = parent_label + '_' + def_label
+            # Build the name from the parent node's label
+            def_label = get_node_label(parent_address) + '_' + def_label
 
-            # Generate bus-name define
-            extract_single(node_address, 'parent-label',
-                           'bus-name', 'DT_' + def_label)
+            # Generate *_BUS_NAME #define
+            extract_bus_name(node_address, 'DT_' + def_label)
 
-    if 'base_label' not in yaml_node_compat:
-        def_label = 'DT_' + def_label
+    def_label = 'DT_' + def_label
 
     if prop == 'reg':
         reg.extract(node_address, names, def_label, 1)
@@ -398,18 +226,8 @@ def extract_property(node_compat, node_address, prop, prop_val, names):
     elif 'clocks' in prop:
         clocks.extract(node_address, prop, def_label)
     elif 'pwms' in prop or 'gpios' in prop:
-        # drop the 's' from the prop
-        generic = prop[:-1]
-        try:
-            prop_values = list(reduced[node_address]['props'].get(prop))
-        except:
-            prop_values = reduced[node_address]['props'].get(prop)
-
-        # Newer versions of dtc might have the property look like
-        # cs-gpios = <0x05 0x0d 0x00>, < 0x06 0x00 0x00>;
-        # So we need to flatten the list in that case
-        if isinstance(prop_values[0], list):
-            prop_values = [item for sublist in prop_values for item in sublist]
+        prop_values = reduced[node_address]['props'][prop]
+        generic = prop[:-1]  # Drop the 's' from the prop
 
         extract_controller(node_address, prop, prop_values, 0,
                            def_label, generic)
@@ -458,7 +276,7 @@ def extract_node_include_info(reduced, root_node_address, sub_node_address,
                 # Handle each property individually, this ends up handling common
                 # patterns for things like reg, interrupts, etc that we don't need
                 # any special case handling at a node level
-                for c in node['props'].keys():
+                for c in node['props']:
                     # if prop is in filter list - ignore it
                     if c in filter_list:
                         continue
@@ -489,13 +307,15 @@ def extract_node_include_info(reduced, root_node_address, sub_node_address,
                         extract_property(
                             node_compat, sub_node_address, k, v, None)
 
-def dict_merge(dct, merge_dct):
+def dict_merge(parent, fname, dct, merge_dct):
     # from https://gist.github.com/angstwad/bf22d1822c38a92ec0a9
 
     """ Recursive dict merge. Inspired by :meth:``dict.update()``, instead of
     updating only top-level keys, dict_merge recurses down into dicts nested
     to an arbitrary depth, updating keys. The ``merge_dct`` is merged into
     ``dct``.
+    :param parent: parent tuple key
+    :param fname: yaml file being processed
     :param dct: dict onto which the merge is executed
     :param merge_dct: dct merged into dct
     :return: None
@@ -503,19 +323,27 @@ def dict_merge(dct, merge_dct):
     for k, v in merge_dct.items():
         if (k in dct and isinstance(dct[k], dict)
                 and isinstance(merge_dct[k], Mapping)):
-            dict_merge(dct[k], merge_dct[k])
+            dict_merge(k, fname, dct[k], merge_dct[k])
         else:
             if k in dct and dct[k] != merge_dct[k]:
-                print("extract_dts_includes.py: Merge of '{}': '{}'  overwrites '{}'.".format(
-                        k, merge_dct[k], dct[k]))
+                merge_warn = True
+                # Don't warn if we are changing the "category" from "optional
+                # to "required"
+                if (k == "category" and dct[k] == "optional" and
+                    merge_dct[k] == "required"):
+                    merge_warn = False
+                if merge_warn:
+                    print("extract_dts_includes.py: {}('{}') merge of property '{}': '{}' overwrites '{}'.".format(
+                            fname, parent, k, merge_dct[k], dct[k]))
             dct[k] = merge_dct[k]
 
 
-def yaml_traverse_inherited(node):
+def yaml_traverse_inherited(fname, node):
     """ Recursive overload procedure inside ``node``
     ``inherits`` section is searched for and used as node base when found.
     Base values are then overloaded by node values
     and some consistency checks are done.
+    :param fname: initial yaml file being processed
     :param node:
     :return: node
     """
@@ -545,134 +373,88 @@ def yaml_traverse_inherited(node):
         node.pop('inherits')
         for inherits in inherits_list:
             if 'inherits' in inherits:
-                inherits = yaml_traverse_inherited(inherits)
+                inherits = yaml_traverse_inherited(fname, inherits)
             # title, description, version of inherited node
             # are overwritten by intention. Remove to prevent dct_merge to
             # complain about duplicates.
             inherits.pop('title', None)
             inherits.pop('version', None)
             inherits.pop('description', None)
-            dict_merge(inherits, node)
+            dict_merge(None, fname, inherits, node)
             node = inherits
     return node
 
 
-def get_key_value(k, v, tabstop):
-    label = "#define " + k
-
-    # calculate the name's tabs
-    if len(label) % 8:
-        tabs = (len(label) + 7) >> 3
-    else:
-        tabs = (len(label) >> 3) + 1
-
-    line = label
-    for i in range(0, tabstop - tabs + 1):
-        line += '\t'
-    line += str(v)
-    line += '\n'
-
-    return line
+def define_str(name, value, value_tabs, is_deprecated=False):
+    line = "#define " + name
+    if is_deprecated:
+        line += " __DEPRECATED_MACRO "
+    return line + (value_tabs - len(line)//8)*'\t' + str(value) + '\n'
 
 
-def output_keyvalue_lines(fd):
-    node_keys = sorted(defs.keys())
-    for node in node_keys:
-        fd.write('# ' + node.split('/')[-1])
-        fd.write("\n")
+def write_conf(f):
+    for node in sorted(defs):
+        f.write('# ' + node.split('/')[-1] + '\n')
 
-        prop_keys = sorted(defs[node].keys())
-        for prop in prop_keys:
-            if prop == 'aliases':
-                for entry in sorted(defs[node][prop]):
-                    a = defs[node][prop].get(entry)
-                    fd.write("%s=%s\n" % (entry, defs[node].get(a)))
-            else:
-                fd.write("%s=%s\n" % (prop, defs[node].get(prop)))
+        for prop in sorted(defs[node]):
+            if prop != 'aliases':
+                f.write('%s=%s\n' % (prop, defs[node][prop]))
 
-        fd.write("\n")
+        for alias in sorted(defs[node]['aliases']):
+            alias_target = defs[node]['aliases'][alias]
+            if alias_target not in defs[node]:
+                alias_target = defs[node]['aliases'][alias_target]
+            f.write('%s=%s\n' % (alias, defs[node].get(alias_target)))
 
-def generate_keyvalue_file(kv_file):
-    with open(kv_file, "w") as fd:
-        output_keyvalue_lines(fd)
+        f.write('\n')
 
 
-def output_include_lines(fd, fixups):
-    compatible = reduced['/']['props']['compatible'][0]
+def write_header(f):
+    f.write('''\
+/**********************************************
+*                 Generated include file
+*                      DO NOT MODIFY
+*/
+#ifndef GENERATED_DTS_BOARD_UNFIXED_H
+#define GENERATED_DTS_BOARD_UNFIXED_H
+''')
 
-    fd.write("/**************************************************\n")
-    fd.write(" * Generated include file for " + compatible)
-    fd.write("\n")
-    fd.write(" *               DO NOT MODIFY\n")
-    fd.write(" */\n")
-    fd.write("\n")
-    fd.write("#ifndef DEVICE_TREE_BOARD_H" + "\n")
-    fd.write("#define DEVICE_TREE_BOARD_H" + "\n")
-    fd.write("\n")
+    def max_dict_key(dct):
+        return max(len(key) for key in dct)
 
-    node_keys = sorted(defs.keys())
-    for node in node_keys:
-        fd.write('/* ' + node.split('/')[-1] + ' */')
-        fd.write("\n")
+    for node in sorted(defs):
+        f.write('/* ' + node.split('/')[-1] + ' */\n')
 
-        max_dict_key = lambda d: max(len(k) for k in d.keys())
-        maxlength = 0
-        if defs[node].get('aliases'):
-            maxlength = max_dict_key(defs[node]['aliases'])
-        maxlength = max(maxlength, max_dict_key(defs[node])) + len('#define ')
+        maxlen = max_dict_key(defs[node])
+        if defs[node]['aliases']:
+            maxlen = max(maxlen, max_dict_key(defs[node]['aliases']))
+        maxlen += len('#define ')
 
-        if maxlength % 8:
-            maxtabstop = (maxlength + 7) >> 3
-        else:
-            maxtabstop = (maxlength >> 3) + 1
+        value_tabs = (maxlen + 8)//8  # Tabstop index for value
+        if 8*value_tabs - maxlen <= 2:
+            # Add some minimum room between the macro name and the value
+            value_tabs += 1
 
-        if (maxtabstop * 8 - maxlength) <= 2:
-            maxtabstop += 1
+        for prop in sorted(defs[node]):
+            if prop != 'aliases':
+                f.write(define_str(prop, defs[node][prop], value_tabs))
 
-        prop_keys = sorted(defs[node].keys())
-        for prop in prop_keys:
-            if prop == 'aliases':
-                for entry in sorted(defs[node][prop]):
-                    a = defs[node][prop].get(entry)
-                    fd.write(get_key_value(entry, a, maxtabstop))
-            else:
-                fd.write(get_key_value(prop, defs[node].get(prop), maxtabstop))
+        for alias in sorted(defs[node]['aliases']):
+            alias_target = defs[node]['aliases'][alias]
+            deprecated_warn = False
+            # Mark any non-DT_ prefixed define as deprecated except
+            # for now we special case LED, SW, and *PWM_LED*
+            if not alias.startswith(('DT_', 'LED', 'SW')) and not 'PWM_LED' in alias:
+                deprecated_warn = True
+            f.write(define_str(alias, alias_target, value_tabs, deprecated_warn))
 
-        fd.write("\n")
+        f.write('\n')
 
-    if fixups:
-        for fixup in fixups:
-            if os.path.exists(fixup):
-                fd.write("\n")
-                fd.write(
-                    "/* Following definitions fixup the generated include */\n")
-                try:
-                    with open(fixup, "r", encoding="utf-8") as fixup_fd:
-                        for line in fixup_fd.readlines():
-                            fd.write(line)
-                        fd.write("\n")
-                except:
-                    raise Exception(
-                        "Input file " + os.path.abspath(fixup) +
-                        " does not exist.")
-
-    fd.write("#endif\n")
+    f.write('#endif\n')
 
 
-def generate_include_file(inc_file, fixups):
-    with open(inc_file, "w") as fd:
-        output_include_lines(fd, fixups)
-
-
-def load_and_parse_dts(dts_file):
-    with open(dts_file, "r", encoding="utf-8") as fd:
-        dts = parse_file(fd)
-
-    return dts
-
-
-def load_yaml_descriptions(dts, yaml_dirs):
-    compatibles = get_all_compatibles(dts['/'], '/', {})
+def load_yaml_descriptions(root, yaml_dirs):
+    compatibles = all_compats(root)
 
     (bindings, bus, bindings_compat) = Bindings.bindings(compatibles, yaml_dirs)
     if not bindings:
@@ -688,7 +470,7 @@ def generate_node_definitions():
         if node_compat is not None and node_compat in get_binding_compats():
             extract_node_include_info(reduced, k, k, None)
 
-    if defs == {}:
+    if not defs:
         raise Exception("No information parsed from dts file.")
 
     for k, v in regs_config.items():
@@ -700,25 +482,21 @@ def generate_node_definitions():
             extract_string_prop(chosen[k], "label", v)
 
     node_address = chosen.get('zephyr,flash', 'dummy-flash')
-    flash.extract(node_address, 'zephyr,flash', 'FLASH')
+    flash.extract(node_address, 'zephyr,flash', 'DT_FLASH')
     node_address = chosen.get('zephyr,code-partition', node_address)
-    flash.extract(node_address, 'zephyr,code-partition', 'FLASH')
-
-    return defs
+    flash.extract(node_address, 'zephyr,code-partition', None)
 
 
 def parse_arguments():
     rdh = argparse.RawDescriptionHelpFormatter
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=rdh)
 
-    parser.add_argument("-d", "--dts", nargs=1, required=True, help="DTS file")
+    parser.add_argument("-d", "--dts", required=True, help="DTS file")
     parser.add_argument("-y", "--yaml", nargs='+', required=True,
                         help="YAML file directories, we allow multiple")
-    parser.add_argument("-f", "--fixup", nargs='+',
-                        help="Fixup file(s), we allow multiple")
-    parser.add_argument("-i", "--include", nargs=1, required=True,
+    parser.add_argument("-i", "--include",
                         help="Generate include file for the build system")
-    parser.add_argument("-k", "--keyvalue", nargs=1, required=True,
+    parser.add_argument("-k", "--keyvalue",
                         help="Generate config file for the build system")
     parser.add_argument("--old-alias-names", action='store_true',
                         help="Generate aliases also in the old way, without "
@@ -730,31 +508,34 @@ def main():
     args = parse_arguments()
     enable_old_alias_names(args.old_alias_names)
 
-    dts = load_and_parse_dts(args.dts[0])
+    # Parse DTS and fetch the root node
+    with open(args.dts, 'r', encoding='utf-8') as f:
+        root = parse_file(f)['/']
 
-    # build up useful lists
-    get_reduced(dts['/'], '/')
-    get_phandles(dts['/'], '/', {})
-    get_aliases(dts['/'])
-    get_chosen(dts['/'])
+    # Create some global data structures from the parsed DTS
+    create_reduced(root, '/')
+    create_phandles(root, '/')
+    create_aliases(root)
+    create_chosen(root)
 
     (extract.globals.bindings, extract.globals.bus_bindings,
-     extract.globals.bindings_compat) = load_yaml_descriptions(dts, args.yaml)
+     extract.globals.bindings_compat) = load_yaml_descriptions(root, args.yaml)
 
-    defs = generate_node_definitions()
+    generate_node_definitions()
 
     # Add DT_CHOSEN_<X> defines to generated files
-    for c in sorted(chosen.keys()):
-        chosen_def = 'DT_CHOSEN_' + convert_string_to_label(c)
-        load_defs = {
-            chosen_def: "1",
-        }
-        insert_defs('chosen', load_defs, {})
+    for c in sorted(chosen):
+        insert_defs('chosen', {'DT_CHOSEN_' + str_to_label(c): '1'}, {})
 
-     # generate config and include file
-    generate_keyvalue_file(args.keyvalue[0])
+    # Generate config and header files
 
-    generate_include_file(args.include[0], args.fixup)
+    if args.keyvalue is not None:
+        with open(args.keyvalue, 'w', encoding='utf-8') as f:
+            write_conf(f)
+
+    if args.include is not None:
+        with open(args.include, 'w', encoding='utf-8') as f:
+            write_header(f)
 
 
 if __name__ == '__main__':

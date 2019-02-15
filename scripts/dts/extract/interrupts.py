@@ -21,8 +21,8 @@ class DTInterrupts(DTDirective):
         for comp in node_address.split('/')[1:]:
             address += '/' + comp
             if 'interrupt-parent' in reduced[address]['props']:
-                interrupt_parent = reduced[address]['props'].get(
-                    'interrupt-parent')
+                interrupt_parent = reduced[address]['props'][
+                    'interrupt-parent']
 
         return phandles[interrupt_parent]
 
@@ -50,19 +50,13 @@ class DTInterrupts(DTDirective):
         l_base = def_label.split('/')
         index = 0
 
-        # Newer versions of dtc might have the interrupt propertly look like
-        # interrupts = <1 2>, <3 4>;
-        # So we need to flatten the list in that case
-        if isinstance(props[0], list):
-            props = [item for sublist in props for item in sublist]
-
         while props:
             prop_def = {}
             prop_alias = {}
             l_idx = [str(index)]
 
             try:
-                name = [convert_string_to_label(names.pop(0))]
+                name = [str_to_label(names.pop(0))]
             except:
                 name = []
 
@@ -76,15 +70,22 @@ class DTInterrupts(DTDirective):
 
                 l_fqn = '_'.join(l_base + l_cell_prefix + l_idx + l_cell_name)
                 prop_def[l_fqn] = props.pop(0)
+                add_compat_alias(node_address,
+                        '_'.join(l_cell_prefix + l_idx + l_cell_name),
+                        l_fqn, prop_alias)
+
                 if len(name):
                     alias_list = l_base + l_cell_prefix + name + l_cell_name
                     prop_alias['_'.join(alias_list)] = l_fqn
+                    add_compat_alias(node_address,
+                            '_'.join(l_cell_prefix + name + l_cell_name),
+                            l_fqn, prop_alias)
 
                 if node_address in aliases:
                     add_prop_aliases(
                         node_address,
                         lambda alias:
-                            '_'.join([convert_string_to_label(alias)] +
+                            '_'.join([str_to_label(alias)] +
                                      l_cell_prefix + name + l_cell_name),
                         l_fqn,
                         prop_alias)

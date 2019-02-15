@@ -40,7 +40,7 @@ static void unwind_stack(u32_t base_ptr)
 	struct stack_frame *frame;
 	int i;
 
-	if (!base_ptr) {
+	if (base_ptr == 0) {
 		printk("NULL base ptr\n");
 		return;
 	}
@@ -52,7 +52,7 @@ static void unwind_stack(u32_t base_ptr)
 		}
 
 		frame = (struct stack_frame *)base_ptr;
-		if (!frame || !frame->ret_addr) {
+		if ((frame == NULL) || (frame->ret_addr == 0)) {
 			break;
 		}
 #ifdef CONFIG_X86_IAMCU
@@ -231,7 +231,7 @@ static FUNC_NORETURN void generic_exc_handle(unsigned int vector,
 		printk("CPU exception %d\n", vector);
 		break;
 	}
-	if (BIT(vector) & _EXC_ERROR_CODE_FAULTS) {
+	if ((BIT(vector) & _EXC_ERROR_CODE_FAULTS) != 0) {
 		printk("***** Exception code: 0x%x\n", pEsf->errorCode);
 	}
 	_NanoFatalErrorHandler(_NANO_ERR_CPU_EXCEPTION, pEsf);
@@ -289,7 +289,6 @@ EXC_FUNC_NOCODE(IV_MACHINE_CHECK);
 #ifdef CONFIG_X86_MMU
 static void dump_entry_flags(x86_page_entry_data_t flags)
 {
-#ifdef CONFIG_X86_PAE_MODE
 	printk("0x%x%x %s, %s, %s, %s\n", (u32_t)(flags>>32),
 	       (u32_t)(flags),
 	       flags & (x86_page_entry_data_t)MMU_ENTRY_PRESENT ?
@@ -300,15 +299,6 @@ static void dump_entry_flags(x86_page_entry_data_t flags)
 	       "User" : "Supervisor",
 	       flags & (x86_page_entry_data_t)MMU_ENTRY_EXECUTE_DISABLE ?
 	       "Execute Disable" : "Execute Enabled");
-#else
-	printk("0x%03x %s, %s, %s\n", flags,
-	       flags & (x86_page_entry_data_t)MMU_ENTRY_PRESENT ?
-	       "Present" : "Non-present",
-	       flags & (x86_page_entry_data_t)MMU_ENTRY_WRITE ?
-	       "Writable" : "Read-only",
-	       flags & (x86_page_entry_data_t)MMU_ENTRY_USER ?
-	       "User" : "Supervisor");
-#endif /* CONFIG_X86_PAE_MODE */
 }
 
 static void dump_mmu_flags(void *addr)
@@ -400,11 +390,7 @@ struct task_state_segment _df_tss = {
 	.es = DATA_SEG,
 	.ss = DATA_SEG,
 	.eip = (u32_t)_df_handler_top,
-#ifdef CONFIG_X86_PAE_MODE
 	.cr3 = (u32_t)X86_MMU_PDPT
-#else
-	.cr3 = (u32_t)X86_MMU_PD
-#endif
 };
 
 static FUNC_NORETURN __used void _df_handler_bottom(void)
@@ -422,7 +408,7 @@ static FUNC_NORETURN __used void _df_handler_bottom(void)
 	 * wouldn't be decremented
 	 */
 	_x86_mmu_get_flags((u8_t *)_df_esf.esp - 1, &pde_flags, &pte_flags);
-	if (pte_flags & MMU_ENTRY_PRESENT) {
+	if ((pte_flags & MMU_ENTRY_PRESENT) != 0) {
 		printk("***** Double Fault *****\n");
 		reason = _NANO_ERR_CPU_EXCEPTION;
 	} else {
@@ -459,11 +445,7 @@ static FUNC_NORETURN __used void _df_handler_top(void)
 	_main_tss.es = DATA_SEG;
 	_main_tss.ss = DATA_SEG;
 	_main_tss.eip = (u32_t)_df_handler_bottom;
-#ifdef CONFIG_X86_PAE_MODE
 	_main_tss.cr3 = (u32_t)X86_MMU_PDPT;
-#else
-	_main_tss.cr3 = (u32_t)X86_MMU_PD;
-#endif
 
 	/* NT bit is set in EFLAGS so we will task switch back to _main_tss
 	 * and run _df_handler_bottom

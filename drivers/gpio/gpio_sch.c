@@ -96,7 +96,10 @@ static void _gpio_pin_config(struct device *dev, u32_t pin, int flags)
 	_set_bit_gio(info->regs, pin, !(flags & GPIO_DIR_MASK));
 
 	if (flags & GPIO_INT) {
-		if (flags & GPIO_INT_ACTIVE_HIGH) {
+		if (flags & GPIO_INT_DOUBLE_EDGE) {
+			active_high = 1U;
+			active_low = 1U;
+		} else if (flags & GPIO_INT_ACTIVE_HIGH) {
 			active_high = 1U;
 		} else {
 			active_low = 1U;
@@ -127,6 +130,14 @@ static int gpio_sch_config(struct device *dev,
 			   int access_op, u32_t pin, int flags)
 {
 	const struct gpio_sch_config *info = dev->config->config_info;
+
+	/* Do some sanity check first */
+	if (flags & GPIO_INT) {
+		if (!(flags & GPIO_INT_EDGE)) {
+			/* controller does not support level trigger */
+			return -EINVAL;
+		}
+	}
 
 	if (access_op == GPIO_ACCESS_BY_PIN) {
 		if (pin >= info->bits) {
@@ -235,7 +246,9 @@ static int gpio_sch_manage_callback(struct device *dev,
 {
 	struct gpio_sch_data *gpio = dev->driver_data;
 
-	_gpio_manage_callback(&gpio->callbacks, callback, set);
+	if (_gpio_manage_callback(&gpio->callbacks, callback, set)) {
+		return -EINVAL;
+	}
 
 	_gpio_sch_manage_callback(dev);
 
@@ -311,8 +324,6 @@ static int gpio_sch_init(struct device *dev)
 {
 	struct gpio_sch_data *gpio = dev->driver_data;
 
-	dev->driver_api = &gpio_sch_api;
-
 	k_timer_init(&gpio->poll_timer, NULL, NULL);
 
 	LOG_DBG("SCH GPIO Intel Driver initialized on device: %p", dev);
@@ -329,9 +340,9 @@ static const struct gpio_sch_config gpio_sch_0_config = {
 
 static struct gpio_sch_data gpio_data_0;
 
-DEVICE_INIT(gpio_0, CONFIG_GPIO_SCH_0_DEV_NAME, gpio_sch_init,
+DEVICE_AND_API_INIT(gpio_0, CONFIG_GPIO_SCH_0_DEV_NAME, gpio_sch_init,
 	    &gpio_data_0, &gpio_sch_0_config,
-	    POST_KERNEL, CONFIG_GPIO_SCH_INIT_PRIORITY);
+	    POST_KERNEL, CONFIG_GPIO_SCH_INIT_PRIORITY, &gpio_sch_api);
 
 #endif /* CONFIG_GPIO_SCH_0 */
 #if CONFIG_GPIO_SCH_1
@@ -343,8 +354,8 @@ static const struct gpio_sch_config gpio_sch_1_config = {
 
 static struct gpio_sch_data gpio_data_1;
 
-DEVICE_INIT(gpio_1, CONFIG_GPIO_SCH_1_DEV_NAME, gpio_sch_init,
+DEVICE_AND_API_INIT(gpio_1, CONFIG_GPIO_SCH_1_DEV_NAME, gpio_sch_init,
 	    &gpio_data_1, &gpio_sch_1_config,
-	    POST_KERNEL, CONFIG_GPIO_SCH_INIT_PRIORITY);
+	    POST_KERNEL, CONFIG_GPIO_SCH_INIT_PRIORITY, &gpio_sch_api);
 
 #endif /* CONFIG_GPIO_SCH_1 */

@@ -15,7 +15,7 @@
 #define sem_take_from_isr(sema) irq_offload(isr_sem_take, sema)
 
 #define SEM_TIMEOUT (MSEC(100))
-#define STACK_SIZE (1024)
+#define STACK_SIZE (1024 + CONFIG_TEST_EXTRA_STACKSIZE)
 #define TOTAL_THREADS_WAITING (5)
 
 struct timeout_info {
@@ -38,8 +38,8 @@ K_PIPE_DEFINE(timeout_info_pipe,
 	      sizeof(struct timeout_info) * TOTAL_THREADS_WAITING, 4);
 
 
-__kernel struct k_thread sem_tid, sem_tid_1, sem_tid_2;
-__kernel struct k_thread multiple_tid[TOTAL_THREADS_WAITING];
+struct k_thread sem_tid, sem_tid_1, sem_tid_2;
+struct k_thread multiple_tid[TOTAL_THREADS_WAITING];
 
 /******************************************************************************/
 /* Helper functions */
@@ -764,8 +764,7 @@ void test_main(void)
 			      &simple_sem, &multiple_thread_sem,
 			      &low_prio_sem, &mid_prio_sem, &high_prio_sem,
 			      &stack_1, &stack_2, &stack_3, &timeout_info_pipe,
-			      &sem_tid, &sem_tid_1, &sem_tid_2,
-			      NULL);
+			      &sem_tid, &sem_tid_1, &sem_tid_2);
 
 	ztest_test_suite(test_semaphore,
 			 ztest_unit_test(test_simple_sem_from_isr),

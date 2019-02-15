@@ -330,7 +330,7 @@ struct mqtt_sec_config {
 	u32_t sec_tag_count;
 
 	/** Indicates the list of security tags to be used for the session. */
-	sec_tag_t *seg_tag_list;
+	sec_tag_t *sec_tag_list;
 
 	/** Peer hostname for ceritificate verification.
 	 *  May be NULL to skip hostname verification.
@@ -341,17 +341,22 @@ struct mqtt_sec_config {
 /** @brief MQTT transport type. */
 enum mqtt_transport_type {
 	/** Use non secure TCP transport for MQTT connection. */
-	MQTT_TRANSPORT_NON_SECURE = 0x00,
+	MQTT_TRANSPORT_NON_SECURE,
 
 #if defined(CONFIG_MQTT_LIB_TLS)
 	/** Use secure TCP transport (TLS) for MQTT connection. */
-	MQTT_TRANSPORT_SECURE     = 0x01,
+	MQTT_TRANSPORT_SECURE,
 #endif /* CONFIG_MQTT_LIB_TLS */
+
+#if defined(CONFIG_MQTT_LIB_SOCKS)
+	/** Use SOCKS5 proxy for MQTT connection. */
+	MQTT_TRANSPORT_SOCKS,
+#endif /* CONFIG_MQTT_LIB_SOCKS */
 
 	/** Shall not be used as a transport type.
 	 *  Indicator of maximum transport types possible.
 	 */
-	MQTT_TRANSPORT_NUM        = 0x02
+	MQTT_TRANSPORT_NUM
 };
 
 /** @brief MQTT transport specific data. */
@@ -381,6 +386,18 @@ struct mqtt_transport {
 			struct mqtt_sec_config config;
 		} tls;
 #endif /* CONFIG_MQTT_LIB_TLS */
+
+#if defined(CONFIG_MQTT_LIB_SOCKS)
+		/* SOCKS5 proxy transport for MQTT */
+		struct {
+			/** Socket descriptor. */
+			int sock;
+
+			/** SOCKS5 proxy address. */
+			struct sockaddr_storage *proxy;
+		} socks5;
+#endif /* CONFIG_MQTT_LIB_SOCKS */
+
 	};
 };
 
@@ -582,7 +599,7 @@ int mqtt_subscribe(struct mqtt_client *client,
 		   const struct mqtt_subscription_list *param);
 
 /**
- * @brief API to request unsubscribtion of one or more topics on the connection.
+ * @brief API to request unsubscription of one or more topics on the connection.
  *
  * @param[in] client Identifies client instance for which the procedure is
  *                   requested. Shall not be NULL.

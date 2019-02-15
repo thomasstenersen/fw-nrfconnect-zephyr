@@ -519,7 +519,7 @@ static void led_timeout(struct k_work *work)
 	}
 
 	/* Stop after 5 iterations */
-	if (led_cntr > (ARRAY_SIZE(leds) * 5)) {
+	if (led_cntr >= (ARRAY_SIZE(leds) * 5)) {
 		led_cntr = 0;
 		return;
 	}
@@ -557,8 +557,8 @@ static int erase_storage(void)
 
 	dev = device_get_binding(DT_FLASH_DEV_NAME);
 
-	return flash_erase(dev, FLASH_AREA_STORAGE_OFFSET,
-			   FLASH_AREA_STORAGE_SIZE);
+	return flash_erase(dev, DT_FLASH_AREA_STORAGE_OFFSET,
+			   DT_FLASH_AREA_STORAGE_SIZE);
 }
 
 void board_refresh_display(void)
@@ -568,7 +568,7 @@ void board_refresh_display(void)
 
 int board_init(void)
 {
-	epd_dev = device_get_binding(DT_SSD1673_DEV_NAME);
+	epd_dev = device_get_binding(DT_SOLOMON_SSD1673FB_0_LABEL);
 	if (epd_dev == NULL) {
 		printk("SSD1673 device not found\n");
 		return -ENODEV;

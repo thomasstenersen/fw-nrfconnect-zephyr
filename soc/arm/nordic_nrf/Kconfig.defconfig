@@ -26,4 +26,11 @@ config GPIO_NRFX
 
 endif # GPIO
 
+if SPI
+
+config GPIO
+	default y
+
+endif # SPI
+
 endif # SOC_FAMILY_NRF
