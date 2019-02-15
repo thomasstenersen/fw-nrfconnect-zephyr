@@ -26,18 +26,4 @@ config GPIO_NRFX
 
 endif # GPIO
 
-if FLASH
-
-config SOC_FLASH_NRF
-	default y
-
-endif # FLASH
-
-if ENTROPY_GENERATOR
-
-config ENTROPY_NRF5_RNG
-	default y
-
-endif # ENTROPY_GENERATOR
-
 endif # SOC_FAMILY_NRF

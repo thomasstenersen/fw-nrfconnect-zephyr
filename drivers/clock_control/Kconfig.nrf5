@@ -7,24 +7,12 @@
 menuconfig CLOCK_CONTROL_NRF5
 	bool "NRF5 Clock controller support"
 	depends on SOC_COMPATIBLE_NRF
-	select CLOCK_CONTROL_NRF5_IMPL
+	default y
 	help
 	  Enable support for the Nordic Semiconductor nRF5x series SoC clock
 	  driver.
 
 if CLOCK_CONTROL_NRF5
-
-choice CLOCK_CONTROL_NRF5_IMPL
-	bool "nRF5 Clock controller implementation"
-	default CLOCK_CONTROL_NRF5_DEFAULT
-	help
-	  Choose the driver implementation
-
-config CLOCK_CONTROL_NRF5_DEFAULT
-	bool "Default NRF5 Clock controller support"
-	depends on BT_LL_SW
-
-endchoice
 
 config CLOCK_CONTROL_NRF5_IRQ_PRIORITY
 	int "Power Clock Interrupt Priority"
