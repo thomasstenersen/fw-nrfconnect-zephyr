@@ -22,7 +22,7 @@ config FLASH_HAS_PAGE_LAYOUT
 
 config FLASH_HAS_SUBSYS_DRIVER
   bool
-  default false
+  default n
   help
     This option can be enabled by an external library if it
 		needs to take control over the flash memory peripheral.
@@ -56,6 +56,7 @@ if !FLASH_HAS_SUBSYS_DRIVER
 config SOC_FLASH_NRF
 	bool "Nordic Semiconductor nRF flash driver"
 	depends on SOC_FAMILY_NRF
+	default y
 	select FLASH_HAS_PAGE_LAYOUT
 	select FLASH_HAS_DRIVER_ENABLED
 	help
