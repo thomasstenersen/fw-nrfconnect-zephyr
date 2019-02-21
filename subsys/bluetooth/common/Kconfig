@@ -8,39 +8,6 @@
 
 if BT_HCI
 
-config BT_HCI_VS
-	bool "Zephyr HCI Vendor-Specific Commands"
-	default y
-	help
-	  Enable support for the Zephyr HCI Vendor-Specific Commands in the
-	  Host and/or Controller. This enables Set Version Information,
-	  Supported Commands, Supported Features vendor commands.
-
-config BT_HCI_VS_EXT
-	bool "Zephyr HCI Vendor-Specific Extensions"
-	depends on BT_HCI_VS
-	default y
-	help
-	  Enable support for the Zephyr HCI Vendor-Specific Extensions in the
-	  Host and/or Controller. This enables  Write BD_ADDR, Read Build Info,
-	  Read Static Addresses and Read Key Hierarchy Roots vendor commands.
-
-config BT_HCI_VS_EXT_DETECT
-	bool "Use heuristics to guess HCI vendor extensions support in advance"
-	depends on BT_HCI_VS_EXT && !BT_CTLR
-	default y if BOARD_QEMU_X86 || BOARD_QEMU_CORTEX_M3 || BOARD_NATIVE_POSIX
-	help
-	  Use some heuristics to try to guess in advance whether the controller
-	  supports the HCI vendor extensions in advance, in order to prevent
-	  sending vendor commands to controller which may interpret them in
-	  completely different ways.
-
-config BT_HCI_MESH_EXT
-	bool "Mesh HCI Command support"
-	depends on BT_BROADCASTER && BT_OBSERVER && !BT_LL_SW_SPLIT
-	help
-	  Enable support for the Bluetooth Mesh HCI Commands.
-
 config BT_RPA
 	# Virtual/hidden option
 	bool
