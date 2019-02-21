@@ -9,6 +9,14 @@
 #
 # Clock controller drivers
 #
+
+config CLOCK_CONTROL_HAS_SUBSYS_DRIVER
+  bool
+  default false
+  help
+		This option can be enabled by an external library if it
+		needs to take control over the clock controller.
+
 menuconfig CLOCK_CONTROL
 	bool "Hardware clock controller support"
 	help
@@ -23,6 +31,8 @@ module = CLOCK_CONTROL
 module-str = clock control
 source "subsys/logging/Kconfig.template.log_config"
 
+
+if !CLOCK_CONTROL_HAS_SUBSYS_DRIVER
 source "drivers/clock_control/Kconfig.nrf"
 
 source "drivers/clock_control/Kconfig.quark_se"
@@ -37,4 +47,5 @@ source "drivers/clock_control/Kconfig.mcux_sim"
 
 source "drivers/clock_control/Kconfig.rv32m1"
 
+endif # !CLOCK_CONTROL_HAS_SUBSYS_DRIVER
 endif # CLOCK_CONTROL

@@ -20,6 +20,13 @@ config FLASH_HAS_PAGE_LAYOUT
 	  This option is enabled when the SoC flash driver supports
 	  retrieving the layout of flash memory pages.
 
+config FLASH_HAS_SUBSYS_DRIVER
+  bool
+  default n
+  help
+		This option can be enabled by an external library if it
+		needs to take control over the flash memory peripheral.
+
 menuconfig FLASH
 	bool "Flash hardware support"
 	help
@@ -44,6 +51,7 @@ config FLASH_PAGE_LAYOUT
 	help
 	  Enables API for retrieving the layout of flash memory pages.
 
+if !FLASH_HAS_SUBSYS_DRIVER
 source "drivers/flash/Kconfig.nrf"
 
 source "drivers/flash/Kconfig.mcux"
@@ -64,4 +72,5 @@ source "drivers/flash/Kconfig.sam"
 
 source "drivers/flash/Kconfig.w25qxxdv"
 
+endif # FLASH_HAS_SUBSYS_DRIVER
 endif

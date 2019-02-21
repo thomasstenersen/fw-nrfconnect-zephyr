@@ -6,19 +6,28 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+config ENTROPY_HAS_SUBSYS_DRIVER
+  bool
+  default false
+  help
+    This option can be enabled by an external library if it
+		needs to take control over the entropy driver.
+
 menuconfig ENTROPY_GENERATOR
 	bool "Entropy Drivers"
 	help
 	  Include entropy drivers in system config.
 
-if ENTROPY_GENERATOR
 
+if ENTROPY_GENERATOR
+if !ENTROPY_HAS_SUBSYS_DRIVER
 source "drivers/entropy/Kconfig.mcux"
 source "drivers/entropy/Kconfig.stm32"
 source "drivers/entropy/Kconfig.esp32"
 source "drivers/entropy/Kconfig.nrf5"
 source "drivers/entropy/Kconfig.sam"
 source "drivers/entropy/Kconfig.native_posix"
+endif
 
 config ENTROPY_HAS_DRIVER
 	bool
