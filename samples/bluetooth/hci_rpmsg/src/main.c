@@ -136,7 +136,7 @@ NET_BUF_POOL_FIXED_DEFINE(cmd_tx_pool, CONFIG_BT_HCI_CMD_COUNT, CMD_BUF_SIZE,
 #if defined(CONFIG_BT_CTLR_TX_BUFFER_SIZE)
 #define BT_L2CAP_MTU (CONFIG_BT_CTLR_TX_BUFFER_SIZE - BT_L2CAP_HDR_SIZE)
 #else
-#define BT_L2CAP_MTU 65 /* 64-byte public key + opcode */
+#define BT_L2CAP_MTU 255 /* 64-byte public key + opcode */
 #endif /* CONFIG_BT_CTLR */
 
 /** Data size needed for ACL buffers */
