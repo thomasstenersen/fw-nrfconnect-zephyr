@@ -459,6 +459,9 @@ void main(void)
 			K_THREAD_STACK_SIZEOF(tx_thread_stack), tx_thread,
 			NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
 
+	volatile uint32_t *p_penalty_register = (volatile uint32_t *)0x41008C04;
+	*p_penalty_register = 1;
+
 	while (1) {
 		struct net_buf *buf;
 
