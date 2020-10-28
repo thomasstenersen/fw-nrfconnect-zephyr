@@ -24,6 +24,7 @@
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/l2cap.h>
 #include <bluetooth/hci.h>
+#include <bluetooth/hci_vs.h>
 #include <bluetooth/buf.h>
 #include <bluetooth/hci_raw.h>
 
@@ -204,8 +205,8 @@ static void tx_isr(void)
 	}
 }
 
-static void bt_uart_isr(const struct device *unused, void *user_data)
-{
+static void bt_uart_isr(const struct device *unused, void *user_data){
+
 	ARG_UNUSED(unused);
 	ARG_UNUSED(user_data);
 
@@ -326,6 +327,45 @@ static int hci_uart_init(const struct device *unused)
 DEVICE_INIT(hci_uart, "hci_uart", &hci_uart_init, NULL, NULL,
 	    APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
 
+
+static void set_public_address(struct k_fifo *rx_queue)
+{
+	const struct bt_hci_cp_vs_write_bd_addr cmd = {
+		.bdaddr.val = {0xFA, 0xFA, 0xFA, 0xFA, 0xFA, 0xFA}
+	};
+
+	const struct bt_hci_cmd_hdr cmd_header = {
+		.opcode = BT_HCI_OP_VS_WRITE_BD_ADDR,
+		.param_len = sizeof(cmd)
+	};
+
+	struct net_buf *buf;
+	int err;
+
+	buf = bt_buf_get_tx(BT_BUF_CMD, K_NO_WAIT,
+			    &cmd_header, sizeof(cmd_header));
+
+	net_buf_add_mem(buf, &cmd, sizeof(cmd));
+	err = bt_send(buf);
+	__ASSERT_NO_MSG(err == 0);
+
+
+	/* Pull out the command complete. */
+	buf = net_buf_get(rx_queue, K_SECONDS(10)); /* 10s == HCI_CMD_TIMEOUT */
+	struct bt_hci_evt_hdr *hdr;
+	__ASSERT_NO_MSG(buf != NULL);
+	__ASSERT_NO_MSG(buf->len >= sizeof(*hdr));
+
+	hdr = net_buf_pull_mem(buf, sizeof(*hdr));
+	__ASSERT_NO_MSG(hdr->evt == BT_HCI_EVT_CMD_COMPLETE);
+	struct bt_hci_evt_cmd_complete *evt;
+	evt = net_buf_pull_mem(buf, sizeof(*evt));
+	__ASSERT_NO_MSG(sys_le16_to_cpu(evt->opcode) == BT_HCI_OP_VS_WRITE_BD_ADDR);
+
+	net_buf_unref(buf);
+}
+
+
 void main(void)
 {
 	/* incoming events and data from the controller */
@@ -337,6 +377,7 @@ void main(void)
 
 	/* Enable the raw interface, this will in turn open the HCI driver */
 	bt_enable_raw(&rx_queue);
+	set_public_address(&rx_queue);
 
 	if (IS_ENABLED(CONFIG_BT_WAIT_NOP)) {
 		/* Issue a Command Complete with NOP */
