@@ -214,6 +214,12 @@ import errno
 import locale
 import re
 import textwrap
+import yaml
+from pathlib import Path
+
+with open(Path(__file__).parent / 'features.yaml', 'r', encoding='utf-8') as fd:
+    _EXPERIMENTAL_LIST = yaml.load(fd.read(), Loader=yaml.SafeLoader)
+
 
 from kconfiglib import Symbol, Choice, MENU, COMMENT, MenuNode, \
                        BOOL, TRISTATE, STRING, INT, HEX, \
@@ -677,6 +683,12 @@ def menuconfig(kconf):
     global _show_all
 
     _kconf = kconf
+
+    for k, v in kconf.syms.items():
+        if k in _EXPERIMENTAL_LIST:
+            for node in v.nodes:
+                if node.prompt:
+                    node.prompt = (node.prompt[0] + ' [VERY EXPERIMENTAL]', node.prompt[1])
 
     # Filename to save configuration to
     _conf_filename = standard_config_filename()
